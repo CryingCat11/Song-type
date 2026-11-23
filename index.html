@@ -171,7 +171,7 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 <script>
 /* ===== Songs. yt = YouTube video id. Lyrics with timings load from lrclib.net in the browser. ===== */
 const BUILTIN=[
-  {id:'dynasty',title:'ДИНАСТИЯ',artist:'VILLIAN, madk1d',lrcArtist:'VILLIAN',yt:['J7NFL-eOxiQ','p-LBiCtzXu0']},
+  {id:'dynasty',title:'ДИНАСТИЯ',artist:'VILLIAN, madk1d',lrcArtist:'VILLIAN',yt:['J7NFL-eOxiQ','p-LBiCtzXu0'],off:{'J7NFL-eOxiQ':-2}},
   {id:'67',title:'67 (Six Seven)',artist:'GAZAN',lrcTitle:'67',yt:['XEGmDSAKJfk','a8sLiNEB9LU','yo5CILhgvT4','iTkVZdai1es'],latin:true},
   {id:'rich',title:'Быть богатым',artist:'Voskresenskii, Платина',lrcArtist:'Voskresenskii',yt:['tzwyHxK_GK0','X1-MXdyThJ0','5ykv5hCMeW0','HxM1Uvek2yQ']}
 ];
@@ -303,7 +303,7 @@ async function start(song){
   const lines=cands.length?cands[0].lines:[];
   if(lines.length<2){addForm(song,'Не нашёл текст с таймингами для этой песни. Вставь его ниже, это занимает минуту.');return}
   const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
-  const offKey='dp_off2_'+song.id+'_'+vids[0];
+  const offKey='dp_off3_'+song.id+'_'+vids[0];
   G={song,lines,cands,manualOff:store.get(offKey,null)!==null,synced:false,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
      started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
   render();
@@ -312,7 +312,7 @@ async function start(song){
     events:{onReady:()=>{G.ready=true;autoSync();$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
             onStateChange:e=>{if(e.data===1)autoSync();if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
             onError:e=>{const n=e.data;G.codes.push(n);
-              if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off2_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
+              if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off3_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
                 $('cover').hidden=false;$('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
                 if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
               addForm(song,'(Коды YouTube: '+G.codes.join(', ')+') '+(n===101||n===150?'Ни одну загрузку этой песни YouTube не даёт показать на сайте. Вставь ссылку на другое видео с ней.':'Видео с YouTube не загрузилось. Проверь ссылку.'))}}});
@@ -380,7 +380,13 @@ function autoSync(){
   const withD=G.cands.filter(c=>c.d>0);if(!withD.length)return;
   const best=withD.reduce((a,c)=>Math.abs(c.d-vd)<Math.abs(a.d-vd)?c:a);
   if(best.lines!==G.lines&&G.i<0){G.lines=best.lines;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
-  if(!G.manualOff){const diff=vd-best.d;G.offset=Math.abs(diff)>=1&&Math.abs(diff)<=25?Math.round(-diff*100)/100:0;showOffset()}
+  if(!G.manualOff){
+    const vid=G.vids[G.vi],known=G.song.off&&G.song.off[vid];
+    // measured offset for this clip wins; otherwise a small length difference is treated as a longer/shorter intro.
+    // A big difference is usually an outro or a skit, so it is not used.
+    const diff=vd-best.d;
+    G.offset=typeof known==='number'?known:(Math.abs(diff)>=1&&Math.abs(diff)<=4?Math.round(-diff*100)/100:0);
+    showOffset()}
 }
 function showOffset(){$('ov').textContent=(G.offset>0?'+':'')+G.offset.toFixed(2).replace('.',',')}
 function playing(){try{return G.player.getPlayerState()===1}catch(e){return false}}
