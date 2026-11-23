@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Допой строчку</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -300,17 +301,17 @@ async function start(song){
   const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
   const offKey='dp_off_'+song.id+'_'+vids[0];
   G={song,lines,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
-     started:false,waiting:false,done:false,dead:false,vids,vi:0};
+     started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
   render();
   await loadYT();if(!G||G.dead)return;
   G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
     events:{onReady:()=>{G.ready=true;$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
             onStateChange:e=>{if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
-            onError:e=>{const n=e.data;
+            onError:e=>{const n=e.data;G.codes.push(n);
               if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);showOffset();
                 $('cover').hidden=false;$('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
                 if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
-              addForm(song,n===101||n===150?'Ни одну загрузку этой песни YouTube не даёт показать на сайте. Вставь ссылку на другое видео с ней.':'Видео с YouTube не загрузилось. Проверь ссылку.')}}});
+              addForm(song,n===101||n===150?'Ни одну загрузку этой песни YouTube не даёт показать на сайте. Вставь ссылку на другое видео с ней.':'Видео с YouTube не загрузилось. Проверь ссылку.'+' (код ошибки YouTube: '+G.codes.join(', ')+')')}}});
   if(MOCK){$('coverBtn').disabled=false;G.ready=true}
   else setTimeout(()=>{if(G&&!G.dead&&G.song===song&&!G.ready&&!G.started){$('coverMsg').textContent='YouTube не отвечает. Проверь, открывается ли youtube.com в этом браузере, и нажми «Заново».';$('retry').hidden=false}},12000);
   loop();
