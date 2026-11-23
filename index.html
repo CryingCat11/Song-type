@@ -526,7 +526,7 @@ function loop(){
   }
   if(!G.L.done){
     // the song plays the line to its end, then waits until the line is typed
-    if(t>=lineEnd(G.i)+TAIL){
+    if(t>=lineEnd(G.i)+(G.i+1<G.lines.length?-.1:TAIL)){ // stop just before the next line's first word
       if(isPlaying)G.player.pauseVideo();
       if(!G.waiting){G.waiting=true;$('msg').textContent='Песня ждёт: допечатай строчку.'}
     }

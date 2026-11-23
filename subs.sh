@@ -19,6 +19,7 @@ mkdir -p $DIR/subs
 IDS=$(grep -o "yt:\[[^]]*\]" $DIR/index.html | grep -o "'[A-Za-z0-9_-]\{11\}'" | tr -d "'" | sort -u)
 ok=0; bad=0
 for id in $IDS; do
+  if ls $DIR/subs/$id.*.json3 >/dev/null 2>&1; then ok=$((ok+1)); echo "уже есть $id"; continue; fi
   rm -f /tmp/st_$id.*
   yt-dlp --quiet --no-warnings --skip-download --write-subs --write-auto-subs \
     --sub-langs "ru-orig,ru,en-orig,en" --sub-format json3 -o "/tmp/st_%(id)s" "https://www.youtube.com/watch?v=$id" 2>/tmp/st_err
@@ -29,7 +30,7 @@ for id in $IDS; do
   done
   if [ -n "$got" ]; then ok=$((ok+1)); echo "OK  $id:$got"
   else bad=$((bad+1)); echo "нет $id: $(tail -1 /tmp/st_err)"; fi
-  sleep 2
+  sleep 5
 done
 chmod -R a+r $DIR/subs
 echo "Готово: субтитры есть у $ok клипов, нет у $bad."
