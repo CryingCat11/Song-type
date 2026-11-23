@@ -178,7 +178,7 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 <body>
 <div class="wrap">
   <header>
-    <h1 class="logo" id="home" tabindex="0">Допой<span>.</span>строчку <small id="ver" style="font:500 11px var(--mono,monospace);color:var(--muted);letter-spacing:0">v12</small></h1>
+    <h1 class="logo" id="home" tabindex="0">Допой<span>.</span>строчку <small id="ver" style="font:500 11px var(--mono,monospace);color:var(--muted);letter-spacing:0">v13</small></h1>
     <div class="hright">
       <div class="seg" id="viewSeg" role="group" aria-label="Версия"><button data-v="pc">ПК</button><button data-v="phone">Телефон</button></div>
     </div>
@@ -394,7 +394,7 @@ function render(){
     <input id="answer" type="text" name="dp-word-x" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" data-form-type="other" enterkeyhint="next" placeholder="Печатай слово…" aria-label="Ввод слова">
     <p class="msg" id="msg"></p>
     <div class="actions"><button class="btn danger" id="bf">Завершить</button></div>
-    <div class="sync">Сдвиг текста <button class="btn sm" id="om">−0,25 с</button><b id="ov"></b><button class="btn sm" id="op">+0,25 с</button><span>подстраивается сам, кнопки на крайний случай</span></div>
+    <div class="sync">Сдвиг текста <button class="btn sm" id="om">−0,25 с</button><b id="ov"></b><button class="btn sm" id="op">+0,25 с</button><span id="syncSt">подстраивается сам, кнопки на крайний случай</span></div>
     <p class="keys"><kbd>Esc</kbd> пауза · <kbd>Tab</kbd> пропустить строчку</p>
    </div></div>`;
   $('retry').onclick=()=>start(G.song);
@@ -487,8 +487,8 @@ function autoSync(){
   const subs=G.subs&&G.subs[G.vids[G.vi]];
   if(subs){let al=null;for(const c of G.cands){const r=alignLines(c.lines,subs);if(r&&(!al||r.score>al.score))al=r}
     if(al&&(G.i<0||al.lines.length===G.lines.length)){G.lines=al.lines;G.aligned=true;if(G.i<0){$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
-      if(!G.manualOff){G.offset=0;showOffset()}return}}
-  G.aligned=false;
+      if(!G.manualOff)G.offset=0;showOffset();return}}
+  G.aligned=false;showOffset();
   if(best.lines!==G.lines&&G.i<0){G.lines=best.lines;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
   if(!G.manualOff){
     const vid=G.vids[G.vi],known=G.song.off&&G.song.off[vid];
@@ -496,7 +496,8 @@ function autoSync(){
     G.offset=typeof known==='number'?known:0;
     showOffset()}
 }
-function showOffset(){$('ov').textContent=(G.offset>0?'+':'')+G.offset.toFixed(2).replace('.',',')}
+function showOffset(){
+  const st=$('syncSt');if(st)st.textContent=G.aligned?'тайминги по субтитрам этого клипа ✓':(G.subs&&G.subs[G.vids[G.vi]]?'субтитры клипа есть, но не совпали с текстом: тайминги из альбома':'субтитров клипа нет: тайминги из альбома');$('ov').textContent=(G.offset>0?'+':'')+G.offset.toFixed(2).replace('.',',')}
 function playing(){try{return G.player.getPlayerState()===1}catch(e){return false}}
 function togglePause(){if(!G.player)return;if(playing()){G.manualPause=true;G.player.pauseVideo()}else{G.manualPause=false;if(!G.waiting)G.player.playVideo();focusInput()}}
 function now(){try{return G.player.getCurrentTime()+G.offset}catch(e){return 0}}
