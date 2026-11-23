@@ -289,6 +289,7 @@ function home(){
 
 /* ===== Add / fix song ===== */
 function addForm(edit,note){
+  nav('form');
   const s=edit||{};
   app.innerHTML=`<form id="f"><h2 class="logo" style="font-size:22px">${edit?'Поправить песню':'Своя песня'}</h2>
    ${note?`<p class="msg" style="color:var(--bad)">${esc(note)}</p>`:''}
@@ -297,7 +298,7 @@ function addForm(edit,note){
    <label>Текст с таймингами (LRC), если сам не нашёлся. Можно скопировать на <a href="https://lrclib.net/search/${encodeURIComponent((s.artist||'')+' '+(s.title||''))}" target="_blank" rel="noopener">lrclib.net</a>, поле «Synced lyrics»
     <textarea id="fl" placeholder="[00:12.30] Первая строчка&#10;[00:15.80] Вторая строчка">${esc(s.lrc||'')}</textarea></label>
    <div class="actions"><button type="button" class="btn" id="back">Назад</button><button class="btn main">Сохранить и играть</button></div></form>`;
-  $('back').onclick=home;
+  $('back').onclick=goHome;
   $('f').onsubmit=e=>{e.preventDefault();
     const yt=ytId($('fy').value);if(!yt){$('fy').setCustomValidity('Не похоже на ссылку YouTube');$('fy').reportValidity();return}
     const lrc=$('fl').value.trim();
@@ -315,6 +316,7 @@ let G=null;
 function stopGame(){if(!G)return;G.dead=true;cancelAnimationFrame(G.raf);try{G.player&&G.player.destroy&&G.player.destroy()}catch(e){};G=null}
 
 async function start(song){
+  nav('game');
   stopGame();
   app.innerHTML=`<div class="load"><p class="msg">Загружаю текст песни «${esc(song.title)}»…</p></div>`;
   const cands=(await fetchLRC(song)).map(c=>({d:c.d,lines:parseLRC(c.lrc).filter(l=>normStr(l.text).length)})).filter(c=>c.lines.length>=2);
@@ -568,6 +570,7 @@ function finish(){
   const song=G.song,lines=G.lines,res=G.res;
   try{G.player.destroy()}catch(e){}
   G.dead=true;document.documentElement.classList.remove('ingame');
+  nav('result');
   app.innerHTML=`<section class="result">
    <p class="msg">${esc(song.artist)} · ${esc(song.title)}${rec?' · новый рекорд':''}</p>
    <p class="big">${wpm}<small> слов/мин</small></p>
@@ -580,7 +583,7 @@ function finish(){
    <div class="actions"><button class="btn main" id="again">Ещё раз</button><button class="btn" id="other">Другая песня</button></div>
    ${n?`<ul class="lines">${lines.map((l,k)=>res[k]?`<li><span class="${res[k].full?(res[k].pct>=90?'g':'m'):'r'}">${res[k].full?res[k].pct+'%':'—'}</span><span>${esc(l.text)}</span></li>`:'').join('')}</ul>`:''}
   </section>`;
-  $('again').onclick=()=>start(song);$('other').onclick=home;
+  $('again').onclick=()=>start(song);$('other').onclick=goHome;
 }
 
 /* ===== test mode (?mock): fake player + fake lyrics, no network ===== */
@@ -593,7 +596,12 @@ function mockPlayer(){let t0=null,acc=0,st=-1;return{
 
 // PC: after clicking the YouTube player, keystrokes would go into it; bring the focus back to the typing box
 window.addEventListener('blur',()=>{if(G&&!G.dead&&document.documentElement.dataset.view==='pc')setTimeout(()=>{if(document.activeElement&&document.activeElement.tagName==='IFRAME')focusInput()},150)});
-const homeEl=$('home');homeEl.onclick=home;homeEl.onkeydown=e=>{if(e.key==='Enter')home()};
+/* Browser Back button: every screen other than the song list is one history entry above it */
+function nav(v){try{if(history.state&&history.state.v)history.replaceState({v},'','#'+v);else history.pushState({v},'','#'+v)}catch(e){}}
+function goHome(){try{if(history.state&&history.state.v){history.back();return}}catch(e){}home()}
+window.addEventListener('popstate',()=>home());
+try{if(location.hash)history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+const homeEl=$('home');homeEl.onclick=goHome;homeEl.onkeydown=e=>{if(e.key==='Enter')goHome()};
 home();
 </script>
 </body>
