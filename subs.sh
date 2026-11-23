@@ -16,6 +16,27 @@ chmod +x /usr/local/bin/yt-dlp
 command -v deno >/dev/null || curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh -s -- -y >/dev/null 2>&1 || true
 set +e
 mkdir -p $DIR/subs
+# Сервис, который сам докачивает субтитры, когда игра просит клип, которого ещё нет (в том числе для своих песен)
+command -v python3 >/dev/null || apt-get install -y python3 >/dev/null
+curl -fsSL "$SRC/subs-server.py?t=$(date +%s)" -o /usr/local/bin/song-subs.py
+cat > /etc/systemd/system/song-subs.service <<UNIT
+[Unit]
+Description=Song-type subtitles
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/song-subs.py
+Restart=always
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload; systemctl enable song-subs >/dev/null 2>&1; systemctl restart song-subs
+CONF=/etc/nginx/sites-available/song-type
+if [ -f $CONF ] && ! grep -q "location /subs/" $CONF; then
+  cp $CONF /tmp/song-type.nginx.bak
+  sed -i 's|^\(\s*\)location / {|\1location /subs/ { try_files $uri @subs; add_header Cache-Control "no-cache"; }\n\1location @subs { proxy_pass http://127.0.0.1:8090; proxy_read_timeout 120s; }\n\1location / {|' $CONF
+  if nginx -t 2>/dev/null; then systemctl reload nginx; echo "nginx: субтитры подключены"; else cp /tmp/song-type.nginx.bak $CONF; echo "nginx: не получилось, оставил как было"; fi
+fi
+sleep 1; systemctl is-active --quiet song-subs && echo "Сервис субтитров работает" || echo "Сервис субтитров НЕ запустился: $(journalctl -u song-subs -n 3 --no-pager)"
 IDS=$(grep -o "yt:\[[^]]*\]" $DIR/index.html | grep -o "'[A-Za-z0-9_-]\{11\}'" | tr -d "'" | sort -u)
 ok=0; bad=0
 for id in $IDS; do

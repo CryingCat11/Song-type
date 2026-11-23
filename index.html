@@ -178,7 +178,7 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 <body>
 <div class="wrap">
   <header>
-    <h1 class="logo" id="home" tabindex="0">Допой<span>.</span>строчку <small id="ver" style="font:500 11px var(--mono,monospace);color:var(--muted);letter-spacing:0">v11</small></h1>
+    <h1 class="logo" id="home" tabindex="0">Допой<span>.</span>строчку <small id="ver" style="font:500 11px var(--mono,monospace);color:var(--muted);letter-spacing:0">v12</small></h1>
     <div class="hright">
       <div class="seg" id="viewSeg" role="group" aria-label="Версия"><button data-v="pc">ПК</button><button data-v="phone">Телефон</button></div>
     </div>
@@ -331,12 +331,14 @@ async function start(song){
   if(lines.length<2){addForm(song,'Не нашёл текст с таймингами для этой песни. Вставь его ниже, это занимает минуту.');return}
   const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
   // uploads with captions on the server go first: their text timing is exact
-  const subs={};await Promise.race([Promise.all(vids.map(v=>fetchSubs(v).then(w=>{if(w)subs[v]=w}))),new Promise(r=>setTimeout(r,2500))]);
+  const subs={},subAll=Promise.all(vids.map(v=>fetchSubs(v).then(w=>{if(w)subs[v]=w})));await Promise.race([subAll,new Promise(r=>setTimeout(r,3000))]);
   vids.sort((a,b)=>(subs[b]?1:0)-(subs[a]?1:0));
   const offKey='dp_off4_'+song.id+'_'+vids[0];
   G={song,lines,cands,manualOff:store.get(offKey,null)!==null,synced:false,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
      started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
-  G.subs=subs;
+  G.subs=subs;const g0=G;
+  // the server may still be downloading captions for this clip: when they come, re-time the lines
+  subAll.then(()=>{if(G===g0&&!G.dead&&G.player&&G.subs[G.vids[G.vi]]&&!G.aligned){G.synced=false;autoSync()}});
   // a song sung mostly in Latin letters (an English song added by hand) is typed in full
   {const ws=lines.flatMap(l=>l.text.split(/\s+/)).filter(w=>normStr(w));G.latin=ws.filter(w=>/[a-z]/i.test(w)).length>ws.length/2}
   render();
@@ -460,11 +462,13 @@ function alignLines(lines,cw){
   if(best<Math.max(8,lw.length*.2))return null;
   // 2) per line: the shift most words of this line and its neighbours agree on (clips can add a skit mid-song)
   const pw=lines.map(()=>[]);
-  for(const w of lw)for(const c of cw)if(fuzzyEq(c.n,w.n)){const d=c.t-w.t;if(Math.abs(d-bx)<=25)pw[w.i].push(d)}
+  for(const w of lw)for(const c of cw)if(fuzzyEq(c.n,w.n)){const d=c.t-w.t;if(Math.abs(d-bx)<=90)pw[w.i].push(d)}
   const fill=lines.map((l,i)=>{
     const ds=[];for(let k=Math.max(0,i-3);k<=Math.min(lines.length-1,i+3);k++)ds.push(...pw[k]);
     let bk=0,x=bx;
-    for(let y=bx-25;y<=bx+25;y+=.1){let k=0;for(const d of ds)if(Math.abs(d-y)<=.6)k++;if(k>bk||(k===bk&&Math.abs(y-bx)<Math.abs(x-bx))){bk=k;x=y}}
+    ds.sort((p,q)=>p-q);
+    for(let lo=0,hi=0;lo<ds.length;lo++){while(hi<ds.length&&ds[hi]-ds[lo]<=1.2)hi++;const k=hi-lo,y=(ds[lo]+ds[hi-1])/2;
+      if(k>bk||(k===bk&&Math.abs(y-bx)<Math.abs(x-bx))){bk=k;x=y}}
     if(bk<3)x=bx;
     const own=pw[i].filter(d=>Math.abs(d-x)<=.6).sort((p,q)=>p-q);
     return own.length?own[own.length>>1]:x});
@@ -482,7 +486,7 @@ function autoSync(){
   if(Math.abs(best.d-vd)>30){store.set('dp_okvid_'+G.song.id,null);if(nextVideo('Это видео не похоже на саму песню'))return true}
   const subs=G.subs&&G.subs[G.vids[G.vi]];
   if(subs){let al=null;for(const c of G.cands){const r=alignLines(c.lines,subs);if(r&&(!al||r.score>al.score))al=r}
-    if(al&&G.i<0){G.lines=al.lines;G.aligned=true;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length;
+    if(al&&(G.i<0||al.lines.length===G.lines.length)){G.lines=al.lines;G.aligned=true;if(G.i<0){$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
       if(!G.manualOff){G.offset=0;showOffset()}return}}
   G.aligned=false;
   if(best.lines!==G.lines&&G.i<0){G.lines=best.lines;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}

@@ -29,6 +29,8 @@ server {
   $V6
   root /var/www/song-type;
   index index.html;
+  location /subs/ { try_files \$uri @subs; add_header Cache-Control "no-cache"; }
+  location @subs { proxy_pass http://127.0.0.1:8090; proxy_read_timeout 120s; }
   location / { try_files \$uri /index.html; add_header Cache-Control "no-cache"; }
 }
 NG
