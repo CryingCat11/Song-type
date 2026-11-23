@@ -63,6 +63,9 @@ a{color:var(--hint)}
 .vid{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden;max-width:100%}
 .vid iframe,.vid #yt{position:absolute;inset:0;width:100%;height:100%;border:0}
 .cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(20,16,26,.88);text-align:center;padding:16px;z-index:2}
+.vid.novid{aspect-ratio:auto}
+.vid.novid .cover{position:static;padding:20px 16px}
+.vid.novid #yt{display:none}
 .cover p{margin:0;color:var(--muted);max-width:40ch}
 .side{display:flex;flex-direction:column;gap:12px;min-width:0}
 .hud{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
@@ -145,9 +148,9 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 <script>
 /* ===== Songs. yt = YouTube video id. Lyrics with timings load from lrclib.net in the browser. ===== */
 const BUILTIN=[
-  {id:'dynasty',title:'ДИНАСТИЯ',artist:'VILLIAN, madk1d',lrcArtist:'VILLIAN',yt:'J7NFL-eOxiQ'},
-  {id:'67',title:'67 (Six Seven)',artist:'GAZAN',lrcTitle:'67',yt:'XEGmDSAKJfk'},
-  {id:'rich',title:'Быть богатым',artist:'Voskresenskii, Платина',lrcArtist:'Voskresenskii',yt:'tzwyHxK_GK0'}
+  {id:'dynasty',title:'ДИНАСТИЯ',artist:'VILLIAN, madk1d',lrcArtist:'VILLIAN',yt:['J7NFL-eOxiQ','p-LBiCtzXu0']},
+  {id:'67',title:'67 (Six Seven)',artist:'GAZAN',lrcTitle:'67',yt:['XEGmDSAKJfk','a8sLiNEB9LU','yo5CILhgvT4','iTkVZdai1es']},
+  {id:'rich',title:'Быть богатым',artist:'Voskresenskii, Платина',lrcArtist:'Voskresenskii',yt:['tzwyHxK_GK0','X1-MXdyThJ0','5ykv5hCMeW0','HxM1Uvek2yQ']}
 ];
 const MOCK=/[?&]mock/.test(location.search);
 
@@ -227,7 +230,7 @@ function home(){
    </div>
    <div class="songs">${allSongs().map(s=>`
     <button class="song" data-id="${esc(s.id)}">
-     <img alt="" loading="lazy" src="https://i.ytimg.com/vi/${esc(s.yt)}/hqdefault.jpg">
+     <img alt="" loading="lazy" src="https://i.ytimg.com/vi/${esc([].concat(s.yt)[0])}/hqdefault.jpg">
      <span class="in"><span class="t">${esc(s.title)}</span><span class="a">${esc(s.artist)}</span>
      ${best[s.id]?`<span class="best">Рекорд: ${best[s.id]}</span>`:''}
      ${s.custom?`<span class="del" data-del="${esc(s.id)}">удалить</span>`:''}</span></button>`).join('')}
@@ -247,7 +250,7 @@ function addForm(edit,note){
   const s=edit||{};
   app.innerHTML=`<form id="f"><h2 class="logo" style="font-size:22px">${edit?'Поправить песню':'Своя песня'}</h2>
    ${note?`<p class="msg" style="color:var(--bad)">${esc(note)}</p>`:''}
-   <label>Ссылка на клип YouTube<input id="fy" required value="${esc(s.yt?'https://youtu.be/'+s.yt:'')}" placeholder="https://www.youtube.com/watch?v=..."></label>
+   <label>Ссылка на клип YouTube<input id="fy" required value="${esc(s.yt?'https://youtu.be/'+[].concat(s.yt)[0]:'')}" placeholder="https://www.youtube.com/watch?v=..."></label>
    <div class="row"><label>Исполнитель<input id="fa" required maxlength="80" value="${esc(s.artist||'')}"></label><label>Название<input id="ft" required maxlength="80" value="${esc(s.title||'')}"></label></div>
    <label>Текст с таймингами (LRC), если сам не нашёлся. Можно скопировать на <a href="https://lrclib.net/search/${encodeURIComponent((s.artist||'')+' '+(s.title||''))}" target="_blank" rel="noopener">lrclib.net</a>, поле «Synced lyrics»
     <textarea id="fl" placeholder="[00:12.30] Первая строчка&#10;[00:15.80] Вторая строчка">${esc(s.lrc||'')}</textarea></label>
@@ -275,15 +278,20 @@ async function start(song){
   const lrc=await fetchLRC(song);
   const lines=lrc?parseLRC(lrc).filter(l=>normStr(l.text).length):[];
   if(lines.length<2){addForm(song,'Не нашёл текст с таймингами для этой песни. Вставь его ниже, это занимает минуту.');return}
-  const offKey='dp_off_'+song.id;
+  const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
+  const offKey='dp_off_'+song.id+'_'+vids[0];
   G={song,lines,i:-1,res:[],score:0,streak:0,bestStreak:0,chars:0,typedOK:0,offset:store.get(offKey,0),offKey,
-     started:false,waiting:false,done:false,dead:false,prevLen:0,mistakes:0};
+     started:false,waiting:false,done:false,dead:false,prevLen:0,mistakes:0,vids,vi:0};
   render();
   await loadYT();if(!G||G.dead)return;
-  G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:song.yt,playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
+  G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{origin:location.origin,playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
     events:{onReady:()=>{$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
-            onStateChange:e=>{if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;focusInput()}},
-            onError:e=>{const n=e.data;addForm(song,n===101||n===150?'Владелец клипа запретил показывать его на других сайтах. Вставь ссылку на другое видео с этой песней (например, lyric video или аудио).':'Видео не загрузилось. Проверь ссылку.')}}});
+            onStateChange:e=>{if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;focusInput()}},
+            onError:e=>{const n=e.data;
+              if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);showOffset();
+                $('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
+                if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
+              noVideo(song,n===101||n===150?'YouTube не даёт показать ни одну загрузку этой песни на сайте.':'Видео с YouTube не загрузилось.')}}});
   if(MOCK){$('coverBtn').disabled=false}
   loop();
 }
@@ -431,6 +439,18 @@ function finish(){
 
 /* ===== test mode (?mock): fake player + fake lyrics, no network ===== */
 const MOCK_LRC='[00:01.00]Первая тестовая строчка\n[00:04.00]Вторая строчка тут\n[00:07.00]Третья и последняя';
+/* No embeddable video: play with a clock, the player starts the song in their own music app */
+function noVideo(song,why){
+  if(!G||G.dead)return;
+  try{G.player.destroy()}catch(e){}
+  G.player=null;G.started=false;
+  const c=$('cover');c.hidden=false;c.parentNode.classList.add('novid');
+  c.innerHTML=`<b style="font-family:var(--display);font-size:18px">${esc(why)}</b>
+   <p>Можно играть без клипа: включи «${esc(song.title)}» в своём плеере (Яндекс Музыка, VK, Spotify) и нажми «Старт» в ту же секунду, когда пойдёт трек. Если строчки опаздывают или спешат, поправь кнопками сдвига.</p>
+   <div class="actions" style="justify-content:center"><button class="btn main" id="clockGo">Старт</button><button class="btn" id="otherLink">Другая ссылка</button></div>`;
+  $('otherLink').onclick=()=>addForm(song);
+  $('clockGo').onclick=()=>{G.player=mockPlayer();G.player.playVideo();focusInput()};
+}
 function mockPlayer(){let t0=null,acc=0,st=-1;return{
   playVideo(){if(st!==1){t0=performance.now();st=1;if(!G.started){G.started=true;$('cover').hidden=true}}},
   pauseVideo(){if(st===1){acc+=(performance.now()-t0)/1000;st=2}},
