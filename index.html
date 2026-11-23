@@ -67,6 +67,10 @@ a{color:var(--hint)}
 .vid.novid{aspect-ratio:auto}
 .vid.novid .cover{position:static;padding:20px 16px}
 .vid.novid #yt{display:none}
+.vcol{display:flex;flex-direction:column;gap:10px;min-width:0}
+.startbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.startbar p{margin:0;color:var(--muted);font-size:14px;flex:1 1 200px}
+[data-view="phone"] .vcol{position:sticky;top:env(safe-area-inset-top,0px);z-index:3;background:var(--bg)}
 .cover p{margin:0;color:var(--muted);max-width:40ch}
 .side{display:flex;flex-direction:column;gap:12px;min-width:0}
 .hud{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
@@ -121,7 +125,7 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 /* PHONE VIEW */
 [data-view="phone"] .wrap{max-width:460px;gap:14px;padding-block:12px 24px}
 [data-view="phone"] .game{grid-template-columns:1fr;gap:10px}
-[data-view="phone"] .vid{border-radius:10px;position:sticky;top:env(safe-area-inset-top,0px);z-index:3}
+[data-view="phone"] .vid{border-radius:10px}
 [data-view="phone"] .songs{grid-template-columns:1fr}
 [data-view="phone"] .row{grid-template-columns:1fr}
 [data-view="phone"] .keys{display:none}
@@ -213,7 +217,7 @@ let ytReady=null;
 function loadYT(){
   if(MOCK)return Promise.resolve();
   if(ytReady)return ytReady;
-  ytReady=new Promise(res=>{window.onYouTubeIframeAPIReady=res;const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s)});
+  ytReady=new Promise(res=>{window.onYouTubeIframeAPIReady=res;const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';s.onerror=()=>{ytReady=null;const m=$('coverMsg');if(m)m.textContent='Не удалось загрузить YouTube. Проверь, открывается ли youtube.com в этом браузере, и нажми «Заново».';const r=$('retry');if(r)r.hidden=false};document.head.appendChild(s)});
   return ytReady;
 }
 function ytId(s){s=s.trim();const m=s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);return m?m[1]:(/^[\w-]{11}$/.test(s)?s:null)}
@@ -223,10 +227,9 @@ function home(){
   stopGame();
   const best=store.get('dp_best',{});
   app.innerHTML=`<div style="display:flex;flex-direction:column;gap:20px">
-   <section class="intro"><h2>Успей набрать строчку, пока её поют</h2>
-    <p>Включается клип, строчки появляются ровно под звук. Набирай текущую, пока не началась следующая. Регистр, «ё» и знаки препинания не важны, пробелы тоже.</p></section>
+   <section class="intro"><h2>Набери строчку, и песня пойдёт дальше</h2>
+    <p>Играет клип, строчки появляются под звук. В конце каждой строчки песня встаёт на паузу и ждёт, пока ты её наберёшь. Набрал — играет дальше. Регистр, «ё», пробелы и знаки препинания не важны.</p></section>
    <div class="opts">
-    <button class="opt" id="oWait" aria-pressed="${opt.wait}"><b>Клип ждёт меня</b><small>${opt.wait?'Включено: клип встаёт на паузу, пока не допишешь строчку':'Выключено: клип не ждёт, не успел — строчка уходит'}</small></button>
     <button class="opt" id="oHide" aria-pressed="${opt.hide}"><b>По памяти</b><small>${opt.hide?'Включено: текст скрыт, видно только количество букв':'Выключено: текст строчки виден, набираешь на скорость'}</small></button>
    </div>
    <div class="songs">${allSongs().map(s=>`
@@ -237,7 +240,6 @@ function home(){
      ${s.custom?`<span class="del" data-del="${esc(s.id)}">удалить</span>`:''}</span></button>`).join('')}
     <button class="song add" id="addBtn"><span class="in"><span class="t">+ Добавить песню</span><span class="a">Ссылка на клип и название, текст подтянется сам</span></span></button>
    </div></div>`;
-  $('oWait').onclick=()=>{opt.wait=!opt.wait;store.set('dp_opt',opt);home()};
   $('oHide').onclick=()=>{opt.hide=!opt.hide;store.set('dp_opt',opt);home()};
   app.querySelectorAll('.song[data-id]').forEach(b=>b.onclick=e=>{
     const d=e.target.closest('[data-del]');
@@ -292,18 +294,18 @@ async function start(song){
               if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);showOffset();
                 $('cover').hidden=false;$('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
                 if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
-              noVideo(song,n===101||n===150?'YouTube не даёт показать ни одну загрузку этой песни на сайте.':'Видео с YouTube не загрузилось.')}}});
+              addForm(song,n===101||n===150?'Ни одну загрузку этой песни YouTube не даёт показать на сайте. Вставь ссылку на другое видео с ней.':'Видео с YouTube не загрузилось. Проверь ссылку.')}}});
   if(MOCK){$('coverBtn').disabled=false;G.ready=true}
-  else setTimeout(()=>{if(G&&!G.dead&&G.song===song&&!G.ready&&!G.started)noVideo(song,'Клип с YouTube не загрузился за 12 секунд.')},12000);
+  else setTimeout(()=>{if(G&&!G.dead&&G.song===song&&!G.ready&&!G.started){$('coverMsg').textContent='YouTube не отвечает. Проверь, открывается ли youtube.com в этом браузере, и нажми «Заново».';$('retry').hidden=false}},12000);
   loop();
 }
 
 function render(){
   const s=G.song;
   app.innerHTML=`<div class="game">
-   <div class="vid"><div id="yt"></div>
-    <div class="cover" id="cover"><b style="font-family:var(--display);font-size:20px">${esc(s.title)}</b><p id="coverMsg">Загружаю клип…</p>
-     <button class="btn main" id="coverBtn" disabled>Старт</button></div></div>
+   <div class="vcol"><div class="vid"><div id="yt"></div></div>
+    <div class="startbar" id="cover"><p id="coverMsg">Загружаю клип с YouTube…</p>
+     <div class="actions"><button class="btn main" id="coverBtn" disabled>Старт</button><button class="btn" id="retry" hidden>Заново</button></div></div></div>
    <div class="side">
     <div class="hud"><div>Очки <b id="hs">0</b></div><div>Серия <b id="hk">0</b></div><div>Строчка <b id="hl">0/${G.lines.length}</b></div><div><b id="ht">0:00</b></div></div>
     <section class="stage" id="stage">
@@ -318,11 +320,12 @@ function render(){
     <p class="msg" id="msg"></p>
     <p class="keys"><kbd>Enter</kbd> пропустить строчку · <kbd>Esc</kbd> пауза</p>
    </div></div>`;
+  $('retry').onclick=()=>start(G.song);
   $('coverBtn').onclick=()=>{
     if(!G.ready&&!MOCK)return;
-    $('cover').hidden=true;try{G.player.playVideo()}catch(e){}focusInput();
+    try{G.player.playVideo()}catch(e){}focusInput();
     // iPhone may refuse to start the clip from our button: then the player taps play on the clip itself
-    setTimeout(()=>{if(G&&!G.dead&&!G.started)$('msg').textContent='Если клип не пошёл, нажми ▶ на самом клипе. Строчки подстроятся под видео.'},1500)};
+    setTimeout(()=>{if(G&&!G.dead&&!G.started)$('msg').textContent='Если клип не пошёл, нажми ▶ прямо на клипе.'},1500)};
   const inp=$('answer');
   inp.oninput=onType;
   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();skip()}else if(e.key==='Escape'){e.preventDefault();togglePause()}};
@@ -352,7 +355,7 @@ function loop(){
   }
   if(a!==G.i){
     if(a>G.i&&G.i>=0&&!G.res[G.i]){
-      if(opt.wait){G.waiting=true;G.player.pauseVideo();$('msg').textContent='Клип ждёт: допиши строчку или нажми «Пропустить».';updateBar(t);return}
+      {G.waiting=true;G.player.pauseVideo();$('msg').textContent='Клип ждёт: допиши строчку или нажми «Пропустить».';updateBar(t);return}
       grade(G.i,false);
     }
     G.i=a;showLine();
@@ -445,18 +448,6 @@ function finish(){
 
 /* ===== test mode (?mock): fake player + fake lyrics, no network ===== */
 const MOCK_LRC='[00:01.00]Первая тестовая строчка\n[00:04.00]Вторая строчка тут\n[00:07.00]Третья и последняя';
-/* No embeddable video: play with a clock, the player starts the song in their own music app */
-function noVideo(song,why){
-  if(!G||G.dead)return;
-  try{G.player.destroy()}catch(e){}
-  G.player=null;G.started=false;
-  const c=$('cover');c.hidden=false;c.parentNode.classList.add('novid');
-  c.innerHTML=`<b style="font-family:var(--display);font-size:18px">${esc(why)}</b>
-   <p>Можно играть без клипа: включи «${esc(song.title)}» в своём плеере (Яндекс Музыка, VK, Spotify) и нажми «Старт» в ту же секунду, когда пойдёт трек. Если строчки опаздывают или спешат, поправь кнопками сдвига.</p>
-   <div class="actions" style="justify-content:center"><button class="btn main" id="clockGo">Старт</button><button class="btn" id="otherLink">Другая ссылка</button></div>`;
-  $('otherLink').onclick=()=>addForm(song);
-  $('clockGo').onclick=()=>{G.player=mockPlayer();G.player.playVideo();focusInput()};
-}
 function mockPlayer(){let t0=null,acc=0,st=-1;return{
   playVideo(){if(st!==1){t0=performance.now();st=1;if(!G.started){G.started=true;$('cover').hidden=true}}},
   pauseVideo(){if(st===1){acc+=(performance.now()-t0)/1000;st=2}},
