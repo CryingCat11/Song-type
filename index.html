@@ -211,10 +211,12 @@ function parseLRC(txt){
   out.sort((a,b)=>a.t-b.t);
   return out;
 }
+// Returns every synced version lrclib has for the song: [{d: track duration in s, lrc}].
+// The version whose length is closest to the YouTube clip is chosen later (clips often differ from the album).
 async function fetchLRC(song){
-  if(song.lrc)return song.lrc;
-  const cached=store.get('dp_lrc_'+song.id,null);if(cached)return cached;
-  if(MOCK)return MOCK_LRC;
+  if(song.lrc)return [{d:0,lrc:song.lrc}];
+  const cached=store.get('dp_lrcs_'+song.id,null);if(cached&&cached.length)return cached;
+  if(MOCK)return [{d:12,lrc:MOCK_LRC}];
   const artist=song.lrcArtist||song.artist, track=song.lrcTitle||song.title;
   const api='https://lrclib.net/api/';
   const tries=[
@@ -224,10 +226,11 @@ async function fetchLRC(song){
   ];
   for(const u of tries){
     try{const r=await fetch(u);if(!r.ok)continue;const list=await r.json();
-      const hit=list.find(x=>x.syncedLyrics&&normStr(x.trackName).includes(normStr(track)))||list.find(x=>x.syncedLyrics);
-      if(hit){store.set('dp_lrc_'+song.id,hit.syncedLyrics);return hit.syncedLyrics}}catch(e){}
+      let hits=list.filter(x=>x.syncedLyrics&&normStr(x.trackName).includes(normStr(track)));
+      if(!hits.length)hits=list.filter(x=>x.syncedLyrics).slice(0,1);
+      if(hits.length){const c=hits.map(x=>({d:+x.duration||0,lrc:x.syncedLyrics}));store.set('dp_lrcs_'+song.id,c);return c}}catch(e){}
   }
-  return null;
+  return [];
 }
 
 /* ===== YouTube player ===== */
@@ -296,20 +299,20 @@ function stopGame(){if(!G)return;G.dead=true;cancelAnimationFrame(G.raf);try{G.p
 async function start(song){
   stopGame();
   app.innerHTML=`<div class="load"><p class="msg">Загружаю текст песни «${esc(song.title)}»…</p></div>`;
-  const lrc=await fetchLRC(song);
-  const lines=lrc?parseLRC(lrc).filter(l=>normStr(l.text).length):[];
+  const cands=(await fetchLRC(song)).map(c=>({d:c.d,lines:parseLRC(c.lrc).filter(l=>normStr(l.text).length)})).filter(c=>c.lines.length>=2);
+  const lines=cands.length?cands[0].lines:[];
   if(lines.length<2){addForm(song,'Не нашёл текст с таймингами для этой песни. Вставь его ниже, это занимает минуту.');return}
   const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
-  const offKey='dp_off_'+song.id+'_'+vids[0];
-  G={song,lines,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
+  const offKey='dp_off2_'+song.id+'_'+vids[0];
+  G={song,lines,cands,manualOff:store.get(offKey,null)!==null,synced:false,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
      started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
   render();
   await loadYT();if(!G||G.dead)return;
   G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
-    events:{onReady:()=>{G.ready=true;$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
-            onStateChange:e=>{if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
+    events:{onReady:()=>{G.ready=true;autoSync();$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
+            onStateChange:e=>{if(e.data===1)autoSync();if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
             onError:e=>{const n=e.data;G.codes.push(n);
-              if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);showOffset();
+              if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off2_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
                 $('cover').hidden=false;$('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
                 if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
               addForm(song,'(Коды YouTube: '+G.codes.join(', ')+') '+(n===101||n===150?'Ни одну загрузку этой песни YouTube не даёт показать на сайте. Вставь ссылку на другое видео с ней.':'Видео с YouTube не загрузилось. Проверь ссылку.'))}}});
@@ -351,7 +354,7 @@ function render(){
     <input id="answer" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="Печатай слово…" aria-label="Ввод слова">
     <p class="msg" id="msg"></p>
     <div class="actions"><button class="btn danger" id="bf">Завершить</button></div>
-    <div class="sync">Сдвиг текста <button class="btn sm" id="om">−0,25 с</button><b id="ov"></b><button class="btn sm" id="op">+0,25 с</button><button class="btn sm" id="sy">Строчка началась сейчас</button><span>Текст спешит или опаздывает? Нажми кнопку в момент, когда начнут петь строчку на экране.</span></div>
+    <div class="sync">Сдвиг текста <button class="btn sm" id="om">−0,25 с</button><b id="ov"></b><button class="btn sm" id="op">+0,25 с</button><span>подстраивается сам, кнопки на крайний случай</span></div>
     <p class="keys"><kbd>Esc</kbd> пауза · <kbd>Tab</kbd> пропустить строчку</p>
    </div></div>`;
   $('retry').onclick=()=>start(G.song);
@@ -363,16 +366,21 @@ function render(){
   inp.oninput=onType;
   inp.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();togglePause()}else if(e.key==='Tab'){e.preventDefault();skipLine()}else if(e.key==='Enter'){e.preventDefault()}};
   $('cPlay').onclick=togglePause;$('cPrev').onclick=prevLine;$('cRep').onclick=replayLine;$('cNext').onclick=skipLine;$('cSkip').onclick=toNext;
-  $('bf').onclick=finish;$('om').onclick=()=>shift(-.25);$('sy').onclick=syncNow;$('op').onclick=()=>shift(.25);
+  $('bf').onclick=finish;$('om').onclick=()=>shift(-.25);$('op').onclick=()=>shift(.25);
   showOffset();
 }
 function focusInput(){const i=$('answer');if(i)i.focus({preventScroll:true})}
-function shift(d){G.offset=Math.round((G.offset+d)*100)/100;store.set(G.offKey,G.offset);showOffset()}
-function syncNow(){
-  if(!G.player)return;let raw=0;try{raw=G.player.getCurrentTime()}catch(e){return}
-  const k=G.i<0?0:G.i;G.offset=Math.round((G.lines[k].t-raw)*100)/100;store.set(G.offKey,G.offset);showOffset();
-  if(G.waiting&&!G.L.done&&now()<lineEnd(G.i)-LEAD){G.waiting=false;$('msg').textContent='';if(!G.manualPause)G.player.playVideo()}
-  focusInput();
+function shift(d){G.offset=Math.round((G.offset+d)*100)/100;G.manualOff=true;store.set(G.offKey,G.offset);showOffset()}
+/* Automatic sync with the clip: pick the lyrics version whose length matches the clip,
+   then shift by the length difference (a clip usually has a longer or shorter intro than the album track). */
+function autoSync(){
+  if(!G||G.synced||!G.player)return;
+  let vd=0;try{vd=G.player.getDuration()||0}catch(e){}
+  if(!vd)return;G.synced=true;
+  const withD=G.cands.filter(c=>c.d>0);if(!withD.length)return;
+  const best=withD.reduce((a,c)=>Math.abs(c.d-vd)<Math.abs(a.d-vd)?c:a);
+  if(best.lines!==G.lines&&G.i<0){G.lines=best.lines;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
+  if(!G.manualOff){const diff=vd-best.d;G.offset=Math.abs(diff)>=1&&Math.abs(diff)<=25?Math.round(-diff*100)/100:0;showOffset()}
 }
 function showOffset(){$('ov').textContent=(G.offset>0?'+':'')+G.offset.toFixed(2).replace('.',',')}
 function playing(){try{return G.player.getPlayerState()===1}catch(e){return false}}
@@ -453,6 +461,8 @@ function stats(){
   $('hw').textContent=Math.round(G.words/mins);
   $('ha').textContent=(G.keys?Math.round(G.ok/G.keys*100):100)+'%';
 }
+function lev(a,b){const m=a.length,n=b.length;let p=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
 function onType(){
   if(G.i<0||!G.L||G.L.done){$('answer').value='';return}
   const L=G.L,w=L.words[L.w],val=$('answer').value,cur=normStr(val);
@@ -461,7 +471,10 @@ function onType(){
   if(cur.length>G.prev.length){for(let k=G.prev.length;k<cur.length;k++){G.keys++;L.keys++;if(cur[k]===w.n[k]){G.ok++;L.ok++}}}
   G.prev=cur;
   // space after a mostly typed word accepts it with the typos counted, so a typo never blocks the song
-  const spaced=/\s$/.test(val)&&cur.length>=Math.ceil(w.n.length*.6);
+  // a word with a small typo is accepted by itself (no extra key), so a typo never blocks the song
+  const tol=w.n.length<=3?0:w.n.length<=6?1:2;
+  const spaced=(/\s$/.test(val)&&cur.length>=Math.ceil(w.n.length*.6))||
+    (tol&&!w.n.startsWith(cur)&&cur.length>=w.n.length-1&&lev(cur,w.n)<=tol);
   if(cur===w.n||spaced){ // word done: box clears, next word
     G.words++;L.w++;while(L.w<L.words.length&&!L.words[L.w].n)L.w++;
     $('answer').value='';G.prev='';
