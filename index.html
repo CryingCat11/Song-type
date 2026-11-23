@@ -209,7 +209,7 @@ const normStr=s=>[...s].filter(isL).map(norm).join('');
 const plural=(n,a,b,c)=>{n=Math.abs(n)%100;const m=n%10;return n>10&&n<20?c:m>1&&m<5?b:m==1?a:c};
 const fmt=s=>{s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 const allSongs=()=>BUILTIN.map(s=>({...s,...(store.get('dp_ov_'+s.id,{}))})).concat(store.get('dp_custom',[]));
-let opt=Object.assign({wait:false,hide:false},store.get('dp_opt',{}));
+let opt=Object.assign({wait:false,hide:false,flow:false},store.get('dp_opt',{}));
 
 /* ===== PC / phone switch (one app) ===== */
 function setView(v){document.documentElement.dataset.view=v;store.set('dp_view',v);
@@ -271,6 +271,7 @@ function home(){
     <p>Играет клип, строчки появляются под звук. Печатай слово за словом: набрал слово, поле очищается для следующего. В конце строчки песня встаёт на паузу и ждёт тебя. Регистр, «ё» и знаки препинания не важны.</p></section>
    <div class="opts">
     <button class="opt" id="oHide" aria-pressed="${opt.hide}"><b>По памяти</b><small>${opt.hide?'Включено: текст скрыт, видно только количество букв':'Выключено: текст строчки виден, набираешь на скорость'}</small></button>
+    <button class="opt" id="oFlow" aria-pressed="${opt.flow}"><b>С ошибками</b><small>${opt.flow?'Включено: песня не ждёт, что не успел, то пропало':'Выключено: в конце строчки песня ждёт, пока не наберёшь её без ошибок'}</small></button>
    </div>
    <div class="songs">${allSongs().map(s=>`
     <button class="song" data-id="${esc(s.id)}">
@@ -281,6 +282,7 @@ function home(){
     <button class="song add" id="addBtn"><span class="in"><span class="t">+ Добавить песню</span><span class="a">Ссылка на клип и название, текст подтянется сам</span></span></button>
    </div></div>`;
   $('oHide').onclick=()=>{opt.hide=!opt.hide;store.set('dp_opt',opt);home()};
+  $('oFlow').onclick=()=>{opt.flow=!opt.flow;store.set('dp_opt',opt);home()};
   app.querySelectorAll('.song[data-id]').forEach(b=>b.onclick=e=>{
     const d=e.target.closest('[data-del]');
     if(d){store.set('dp_custom',store.get('dp_custom',[]).filter(s=>s.id!==d.dataset.del));home();return}
@@ -524,9 +526,19 @@ function loop(){
     else if(left<3.5&&isPlaying)$('tg').textContent='Приготовься… '+Math.ceil(left);
     return;
   }
+  if(!G.L.done&&opt.flow){
+    // «С ошибками»: the song never waits; when the next line starts, this one closes with what was typed
+    const last=G.i===G.lines.length-1;
+    if(last?t>=lineEnd(G.i)+TAIL:a>G.i){
+      const L=G.L,ws=L.words.filter(w=>w.n).length,got=L.words.slice(0,L.w).filter(w=>w.n).length;
+      lineDone(false);G.res[G.i].pct=ws?Math.round(got/ws*100):0;
+      if(last)finish();else newLine(a);
+    }
+    return;
+  }
   if(!G.L.done){
     // the song plays the line to its end, then waits until the line is typed
-    if(t>=lineEnd(G.i)+(G.i+1<G.lines.length?-.1:TAIL)){ // stop just before the next line's first word
+    if(t>=lineEnd(G.i)+(G.i+1<G.lines.length?.1:TAIL)){ // the last word rings out, the next line's first word doesn't start
       if(isPlaying)G.player.pauseVideo();
       if(!G.waiting){G.waiting=true;$('msg').textContent='Песня ждёт: допечатай строчку.'}
     }
@@ -659,7 +671,7 @@ function finish(){
     <div><small>Пропущено</small><b>${n-full}</b></div>
    </div>
    <div class="actions"><button class="btn main" id="again">Ещё раз</button><button class="btn" id="other">Другая песня</button></div>
-   ${n?`<ul class="lines">${lines.map((l,k)=>res[k]?`<li><span class="${res[k].full?(res[k].pct>=90?'g':'m'):'r'}">${res[k].full?res[k].pct+'%':'—'}</span><span>${esc(l.text)}</span></li>`:'').join('')}</ul>`:''}
+   ${n?`<ul class="lines">${lines.map((l,k)=>res[k]?`<li><span class="${res[k].full?(res[k].pct>=90?'g':'m'):'r'}">${res[k].full||res[k].pct?res[k].pct+'%':'—'}</span><span>${esc(l.text)}</span></li>`:'').join('')}</ul>`:''}
   </section>`;
   $('again').onclick=()=>start(song);$('other').onclick=goHome;
 }
