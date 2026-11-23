@@ -365,6 +365,7 @@ function render(){
   const inp=$('answer');
   inp.oninput=onType;
   inp.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();togglePause()}else if(e.key==='Tab'){e.preventDefault();skipLine()}else if(e.key==='Enter'){e.preventDefault()}};
+  document.querySelectorAll('.ic,#cSkip').forEach(x=>x.onmousedown=e=>e.preventDefault()); // clicking controls keeps the typing focus
   $('cPlay').onclick=togglePause;$('cPrev').onclick=prevLine;$('cRep').onclick=replayLine;$('cNext').onclick=skipLine;$('cSkip').onclick=toNext;
   $('bf').onclick=finish;$('om').onclick=()=>shift(-.25);$('op').onclick=()=>shift(.25);
   showOffset();
@@ -392,9 +393,9 @@ function showOffset(){$('ov').textContent=(G.offset>0?'+':'')+G.offset.toFixed(2
 function playing(){try{return G.player.getPlayerState()===1}catch(e){return false}}
 function togglePause(){if(!G.player)return;if(playing()){G.manualPause=true;G.player.pauseVideo()}else{G.manualPause=false;if(!G.waiting)G.player.playVideo();focusInput()}}
 function now(){try{return G.player.getCurrentTime()+G.offset}catch(e){return 0}}
-function seek(t){try{G.player.seekTo(Math.max(0,t-G.offset),true)}catch(e){}}
+function seek(t){G.ignoreSeek=performance.now()+800;try{G.player.seekTo(Math.max(0,t-G.offset),true)}catch(e){}} // our own jumps are not treated as user seeks
 function lineEnd(i){return i+1<G.lines.length?G.lines[i+1].t:G.lines[i].t+Math.max(4,Math.min(10,normStr(G.lines[i].text).length*.35))}
-const LEAD=.12; // pause a moment before the next line starts so its first word isn't heard
+const TAIL=.3; // let the line ring out a little before the song waits, so its last word is never cut
 
 function newLine(i){
   G.i=i;G.L={words:wordsOf(G.lines[i].text),w:0,done:false,keys:0,ok:0};
@@ -410,32 +411,50 @@ function loop(){
   if(!G||G.dead||G.done)return;
   G.raf=requestAnimationFrame(loop);
   if(!G.player||!G.player.getCurrentTime)return;
-  const t=now();
+  const t=now(),pf=performance.now(),isPlaying=playing();
   let dur=0;try{dur=G.player.getDuration()||0}catch(e){}
   $('ht').textContent=fmt(Math.max(0,t-G.offset))+' / '+fmt(dur);
-  $('cPlay').textContent=playing()?'❚❚':'▶';
+  $('cPlay').textContent=isPlaying?'❚❚':'▶';
   let a=-1;for(let k=0;k<G.lines.length;k++){if(G.lines[k].t<=t+.02)a=k;else break}
+  // seek detection: the clip time jumped (YouTube progress bar, double tap, our buttons)
+  if(G.ignoreSeek&&pf<G.ignoreSeek){G.lastT=null}
+  else if(G.lastT!=null){
+    const expect=G.wasPlaying?(pf-G.lastPf)/1000:0;
+    if(Math.abs((t-G.lastT)-expect)>1.2){G.lastT=t;G.lastPf=pf;G.wasPlaying=isPlaying;return onSeek(t,a)}
+  }
+  G.lastT=t;G.lastPf=pf;G.wasPlaying=isPlaying;
   if(G.i<0){
     const left=G.lines[0].t-t;
     if(a>=0)newLine(a);
-    else if(left<3.5&&playing())$('tg').textContent='Приготовься… '+Math.ceil(left);
+    else if(left<3.5&&isPlaying)$('tg').textContent='Приготовься… '+Math.ceil(left);
     return;
   }
-  if(a<G.i){ // rewound with the YouTube controls
-    if(a<0){G.i=-1;$('tg').classList.add('wait');$('tg').textContent='Первая строчка скоро начнётся…';$('next').textContent=G.lines[0].text;return}
-    for(let k=a;k<G.lines.length;k++)G.res[k]=undefined;newLine(a);return;
-  }
   if(!G.L.done){
-    // the song waits for the player at the end of the line
-    if(t>=lineEnd(G.i)-LEAD){
-      if(playing()){G.player.pauseVideo();}
+    // the song plays the line to its end, then waits until the line is typed
+    if(t>=lineEnd(G.i)+TAIL){
+      if(isPlaying)G.player.pauseVideo();
       if(!G.waiting){G.waiting=true;$('msg').textContent='Песня ждёт: допечатай строчку.'}
     }
     return;
   }
-  if(G.i===G.lines.length-1){if(t>=lineEnd(G.i)||!playing()&&!G.manualPause)finish();else wave(t);return}
+  if(G.i===G.lines.length-1){if(t>=lineEnd(G.i)+TAIL)finish();else wave(t);return}
   if(a>G.i){newLine(a);return}
   wave(t);
+}
+function onSeek(t,a){
+  G.waiting=false;$('msg').textContent='';
+  if(a<0){
+    G.i=-1;G.L=null;$('answer').value='';$('wave').hidden=true;$('tg').hidden=false;
+    $('tg').classList.add('wait');$('tg').textContent='Первая строчка скоро начнётся…';$('next').textContent=G.lines[0].text;
+    $('hl').textContent='0/'+G.lines.length;$('pg').style.width='0';
+    for(let k=0;k<G.lines.length;k++)G.res[k]=undefined;
+  }else{
+    for(let k=a;k<G.lines.length;k++)G.res[k]=undefined;
+    newLine(a);
+  }
+  // if the song had stopped to wait for typing, let it play again from the new place
+  if(!playing()&&!G.manualPause)try{G.player.playVideo()}catch(e){}
+  focusInput();
 }
 function wave(t){
   if(!$('wave').hidden){
@@ -477,10 +496,7 @@ function onType(){
   if(cur.length>G.prev.length){for(let k=G.prev.length;k<cur.length;k++){G.keys++;L.keys++;if(cur[k]===w.n[k]){G.ok++;L.ok++}}}
   G.prev=cur;
   // space after a mostly typed word accepts it with the typos counted, so a typo never blocks the song
-  // a word with a small typo is accepted by itself (no extra key), so a typo never blocks the song
-  const tol=w.n.length<=3?0:w.n.length<=6?1:2;
-  const spaced=(/\s$/.test(val)&&cur.length>=Math.ceil(w.n.length*.6))||
-    (tol&&!w.n.startsWith(cur)&&cur.length>=w.n.length-1&&lev(cur,w.n)<=tol);
+  const spaced=false; // a word counts only when it is typed exactly; wrong letters stay red until fixed
   if(cur===w.n||spaced){ // word done: box clears, next word
     G.words++;L.w++;while(L.w<L.words.length&&!L.words[L.w].n)L.w++;
     $('answer').value='';G.prev='';
@@ -552,6 +568,8 @@ function mockPlayer(){let t0=null,acc=0,st=-1;return{
   getCurrentTime(){return acc+(st===1?(performance.now()-t0)/1000:0)},
   getPlayerState(){return st},getDuration(){return 12},seekTo(x){acc=x;t0=performance.now()},destroy(){}}}
 
+// PC: after clicking the YouTube player, keystrokes would go into it; bring the focus back to the typing box
+window.addEventListener('blur',()=>{if(G&&!G.dead&&document.documentElement.dataset.view==='pc')setTimeout(()=>{if(document.activeElement&&document.activeElement.tagName==='IFRAME')focusInput()},150)});
 const homeEl=$('home');homeEl.onclick=home;homeEl.onkeydown=e=>{if(e.key==='Enter')home()};
 home();
 </script>
