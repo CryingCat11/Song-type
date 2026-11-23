@@ -71,7 +71,23 @@ a{color:var(--hint)}
 .vcol{display:flex;flex-direction:column;gap:10px;min-width:0}
 .startbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
 .startbar p{margin:0;color:var(--muted);font-size:14px;flex:1 1 200px}
-[data-view="phone"] .vcol{position:sticky;top:env(safe-area-inset-top,0px);z-index:3;background:var(--bg)}
+/* Phone, during a song: everything that matters (clip, line, input) fits in the top ~400px,
+   so it all stays visible above the keyboard without anything floating over the page. */
+[data-view="phone"].ingame header{display:none}
+[data-view="phone"].ingame .wrap{padding-block:6px 24px;gap:8px}
+[data-view="phone"].ingame .game{gap:6px}
+[data-view="phone"].ingame .side{gap:6px}
+[data-view="phone"].ingame .vcol{gap:6px}
+[data-view="phone"].ingame .stats3{gap:12px}
+[data-view="phone"].ingame .stats3 small{font-size:9px}
+[data-view="phone"].ingame .stats3 b{font-size:14px}
+[data-view="phone"].ingame .ic{width:34px;height:30px;font-size:15px;border-radius:8px}
+[data-view="phone"].ingame .clock{display:none}
+[data-view="phone"].ingame .stage{padding:10px 12px;gap:6px;border-radius:12px}
+[data-view="phone"].ingame .target{font-size:17px;min-height:2.6em;line-height:1.5}
+[data-view="phone"].ingame .next{display:none}
+[data-view="phone"].ingame #answer{padding:9px 12px;font-size:17px}
+[data-view="phone"].ingame .msg{min-height:0}
 .cover p{margin:0;color:var(--muted);max-width:40ch}
 .side{display:flex;flex-direction:column;gap:12px;min-width:0}
 .hud{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
@@ -245,7 +261,7 @@ function ytId(s){s=s.trim();const m=s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)
 
 /* ===== Home ===== */
 function home(){
-  stopGame();
+  stopGame();document.documentElement.classList.remove('ingame');
   const best=store.get('dp_best',{});
   app.innerHTML=`<div style="display:flex;flex-direction:column;gap:20px">
    <section class="intro"><h2>Набери строчку, и песня пойдёт дальше</h2>
@@ -330,6 +346,7 @@ function wordsOf(text){
   return text.split(/\s+/).filter(Boolean).map(raw=>{const skip=!latin&&/[a-z]/i.test(raw);return {raw,skip,n:skip?'':normStr(raw)}});
 }
 function render(){
+  document.documentElement.classList.add('ingame');
   const s=G.song;
   app.innerHTML=`<div class="game">
    <div class="vcol"><div class="vid"><div id="yt"></div></div>
@@ -343,6 +360,7 @@ function render(){
       <button class="ic" id="cPlay" title="Пауза" aria-label="Пауза">❚❚</button>
       <button class="ic" id="cRep" title="Строчку заново" aria-label="Строчку заново">↺</button>
       <button class="ic" id="cNext" title="Пропустить строчку" aria-label="Пропустить строчку">›</button>
+      <button class="ic" id="cFin" title="Завершить" aria-label="Завершить">■</button>
      </div>
     </div>
     <div class="prog"><i id="pg"></i></div><div class="clock" id="ht">0:00 / 0:00</div>
@@ -351,7 +369,7 @@ function render(){
      <div class="wave" id="wave" hidden><svg viewBox="0 0 120 24" aria-hidden="true"><path id="wp" d=""/></svg><button class="btn sm" id="cSkip">⏩ к следующей строчке</button></div>
      <p class="next" id="next">${esc(G.lines[0].text)}</p>
     </section>
-    <input id="answer" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="Печатай слово…" aria-label="Ввод слова">
+    <input id="answer" type="text" name="dp-word-x" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" data-form-type="other" enterkeyhint="next" placeholder="Печатай слово…" aria-label="Ввод слова">
     <p class="msg" id="msg"></p>
     <div class="actions"><button class="btn danger" id="bf">Завершить</button></div>
     <div class="sync">Сдвиг текста <button class="btn sm" id="om">−0,25 с</button><b id="ov"></b><button class="btn sm" id="op">+0,25 с</button><span>подстраивается сам, кнопки на крайний случай</span></div>
@@ -363,14 +381,17 @@ function render(){
     try{G.player.playVideo()}catch(e){}focusInput();
     setTimeout(()=>{if(G&&!G.dead&&!G.started)$('msg').textContent='Если клип не пошёл, нажми ▶ прямо на клипе.'},1500)};
   const inp=$('answer');
-  inp.oninput=onType;
+  inp.oninput=onType;inp.onfocus=pinTop;
   inp.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();togglePause()}else if(e.key==='Tab'){e.preventDefault();skipLine()}else if(e.key==='Enter'){e.preventDefault()}};
   document.querySelectorAll('.ic,#cSkip').forEach(x=>x.onmousedown=e=>e.preventDefault()); // clicking controls keeps the typing focus
-  $('cPlay').onclick=togglePause;$('cPrev').onclick=prevLine;$('cRep').onclick=replayLine;$('cNext').onclick=skipLine;$('cSkip').onclick=toNext;
+  $('cPlay').onclick=togglePause;$('cPrev').onclick=prevLine;$('cRep').onclick=replayLine;$('cNext').onclick=skipLine;$('cFin').onclick=finish;$('cSkip').onclick=toNext;
   $('bf').onclick=finish;$('om').onclick=()=>shift(-.25);$('op').onclick=()=>shift(.25);
   showOffset();
 }
-function focusInput(){const i=$('answer');if(i)i.focus({preventScroll:true})}
+function focusInput(){const i=$('answer');if(i)i.focus({preventScroll:true});pinTop()}
+// iPhone scrolls the page when the keyboard opens; in the phone game layout keep the page at the top
+function pinTop(){if(document.documentElement.classList.contains('ingame')&&document.documentElement.dataset.view==='phone'){setTimeout(()=>window.scrollTo(0,0),60);setTimeout(()=>window.scrollTo(0,0),350)}}
+try{visualViewport.addEventListener('resize',pinTop)}catch(e){}
 function shift(d){G.offset=Math.round((G.offset+d)*100)/100;G.manualOff=true;store.set(G.offKey,G.offset);showOffset()}
 /* Automatic sync with the clip: pick the lyrics version whose length matches the clip,
    then shift by the length difference (a clip usually has a longer or shorter intro than the album track). */
@@ -544,7 +565,7 @@ function finish(){
   const best=store.get('dp_best',{}),rec=wpm>(best[G.song.id]||0)&&full>0;if(rec){best[G.song.id]=wpm;store.set('dp_best',best)}
   const song=G.song,lines=G.lines,res=G.res;
   try{G.player.destroy()}catch(e){}
-  G.dead=true;
+  G.dead=true;document.documentElement.classList.remove('ingame');
   app.innerHTML=`<section class="result">
    <p class="msg">${esc(song.artist)} · ${esc(song.title)}${rec?' · новый рекорд':''}</p>
    <p class="big">${wpm}<small> слов/мин</small></p>
