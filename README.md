@@ -11,3 +11,9 @@ curl -fsSL https://raw.githubusercontent.com/CryingCat11/Song-type/main/install.
 ```
 
 Тестовый режим без сети: `index.html?mock`.
+
+## Точные тайминги под клип
+
+`subs.sh` скачивает на сервер субтитры YouTube каждого клипа (в `/var/www/song-type/subs/`). Игра сверяет по ним текст песни слово в слово, поэтому строчки идут ровно под звук даже у клипов с длинным вступлением. Без субтитров текст идёт по таймингам альбомной версии.
+
+    curl -fsSL https://raw.githubusercontent.com/CryingCat11/Song-type/main/subs.sh | bash -s <коммит>

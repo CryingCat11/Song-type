@@ -274,7 +274,7 @@ function home(){
    </div>
    <div class="songs">${allSongs().map(s=>`
     <button class="song" data-id="${esc(s.id)}">
-     <img alt="" loading="lazy" src="https://i.ytimg.com/vi/${esc([].concat(s.yt)[0])}/hqdefault.jpg">
+     <img alt="" loading="lazy" data-ids="${esc(thumbIds(s).join(' '))}" src="https://i.ytimg.com/vi/${esc(thumbIds(s)[0])}/hqdefault.jpg" onload="thumbOk(this)" onerror="thumbNext(this)">
      <span class="in"><span class="t">${esc(s.title)}</span><span class="a">${esc(s.artist)}</span>
      ${best[s.id]?`<span class="best">Рекорд: ${best[s.id]} слов/мин</span>`:''}
      ${s.custom?`<span class="del" data-del="${esc(s.id)}">удалить</span>`:''}</span></button>`).join('')}
@@ -312,6 +312,10 @@ function addForm(edit,note){
   $('fy').oninput=()=>$('fy').setCustomValidity('');$('fl').oninput=()=>$('fl').setCustomValidity('');
 }
 
+function thumbIds(s){const v=[].concat(s.yt),ok=store.get('dp_okvid_'+s.id,null);if(ok&&v.includes(ok))v.unshift(...v.splice(v.indexOf(ok),1));return v}
+function thumbOk(img){if(img.naturalWidth&&img.naturalWidth<=120)thumbNext(img)}
+function thumbNext(img){const ids=img.dataset.ids.split(' ');ids.shift();img.dataset.ids=ids.join(' ');if(ids.length)img.src='https://i.ytimg.com/vi/'+ids[0]+'/hqdefault.jpg';else img.onload=img.onerror=null}
+
 /* ===== Game ===== */
 let G=null;
 function stopGame(){if(!G)return;G.dead=true;cancelAnimationFrame(G.raf);try{G.player&&G.player.destroy&&G.player.destroy()}catch(e){};G=null}
@@ -324,10 +328,13 @@ async function start(song){
   const lines=cands.length?cands[0].lines:[];
   if(lines.length<2){addForm(song,'Не нашёл текст с таймингами для этой песни. Вставь его ниже, это занимает минуту.');return}
   const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
-  const offKey='dp_off3_'+song.id+'_'+vids[0];
+  const offKey='dp_off4_'+song.id+'_'+vids[0];
   G={song,lines,cands,manualOff:store.get(offKey,null)!==null,synced:false,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
      started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
+  G.subs={};const g0=G;
+  const subP=vids.map(v=>fetchSubs(v).then(w=>{if(w)g0.subs[v]=w}));
   render();
+  await Promise.race([subP[0],new Promise(r=>setTimeout(r,2500))]);if(!G||G.dead||G!==g0)return;
   await loadYT();if(!G||G.dead)return;
   G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
     events:{onReady:()=>{G.ready=true;if(autoSync())return;$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
@@ -403,12 +410,57 @@ function shift(d){G.offset=Math.round((G.offset+d)*100)/100;G.manualOff=true;sto
 function nextVideo(why){
   if(!G||G.dead||G.vi+1>=G.vids.length)return false;
   G.vi++;const v=G.vids[G.vi],song=G.song;
-  G.offKey='dp_off3_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
+  G.offKey='dp_off4_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
   G.started=false;G.i=-1;G.L=null;G.waiting=false;G.res=[];G.lastT=null;
   $('tg').hidden=false;$('wave').hidden=true;$('tg').classList.add('wait');$('tg').textContent='Первая строчка скоро начнётся…';$('next').textContent=G.lines[0].text;
   $('cover').hidden=false;$('coverMsg').textContent=why+', беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
   try{G.player.loadVideoById(v)}catch(e){}
   return true;
+}
+
+/* Exact timing for a clip: YouTube's own (auto) captions of that clip, saved on the server by subs.sh,
+   tell when each word is sung in THIS video. The album lyrics are matched against them word by word,
+   so intros, skits and longer/shorter clips no longer shift the text. */
+async function fetchSubs(vid){
+  if(MOCK&&window.MOCK_SUBS)return window.MOCK_SUBS;
+  const w=[]; // both tracks: the words of the wrong language simply never match
+  for(const lang of ['ru','en']){
+    try{const r=await fetch('subs/'+vid+'.'+lang+'.json3',{cache:'no-cache'});if(!r.ok)continue;
+      const j=await r.json();
+      for(const e of j.events||[])for(const sg of e.segs||[]){
+        const t=((e.tStartMs||0)+(sg.tOffsetMs||0))/1000;
+        for(const x of (sg.utf8||'').split(/\s+/)){const n=normStr(x);if(n)w.push({n,t})}}}catch(e){}
+  }
+  return w.length>=10?w:null;
+}
+function fuzzyEq(a,b){if(a===b)return true;const m=Math.min(a.length,b.length);if(m<4)return false;
+  if(a.startsWith(b)||b.startsWith(a))return true;return Math.abs(a.length-b.length)<=1&&lev(a,b)<=1}
+function alignLines(lines,cw){
+  // estimated time of each lyric word inside its line
+  const lw=[];
+  lines.forEach((l,i)=>{const ws=normStr(l.text)?l.text.split(/\s+/).map(normStr).filter(Boolean):[];
+    const end=i+1<lines.length?lines[i+1].t:l.t+4,dur=Math.min(end-l.t,ws.length*.45+.3);
+    ws.forEach((n,k)=>{if(n.length>=3)lw.push({n,i,t:l.t+dur*k/Math.max(1,ws.length)})})});
+  if(lw.length<8)return null;
+  // 1) one global shift: the one under which most caption words land near a matching lyric word
+  const pairs=[];for(const c of cw)if(c.n.length>=3)for(const w of lw)if(fuzzyEq(c.n,w.n))pairs.push(c.t-w.t);
+  if(pairs.length<8)return null;
+  let best=0,bx=0;
+  for(let x=-120;x<=120;x+=.25){let k=0;for(const d of pairs)if(Math.abs(d-x)<=1.5)k++;if(k>best){best=k;bx=x}}
+  if(best<Math.max(8,lw.length*.2))return null;
+  // 2) per line: the shift most words of this line and its neighbours agree on (clips can add a skit mid-song)
+  const pw=lines.map(()=>[]);
+  for(const w of lw)for(const c of cw)if(fuzzyEq(c.n,w.n)){const d=c.t-w.t;if(Math.abs(d-bx)<=25)pw[w.i].push(d)}
+  const fill=lines.map((l,i)=>{
+    const ds=[];for(let k=Math.max(0,i-3);k<=Math.min(lines.length-1,i+3);k++)ds.push(...pw[k]);
+    let bk=0,x=bx;
+    for(let y=bx-25;y<=bx+25;y+=.1){let k=0;for(const d of ds)if(Math.abs(d-y)<=.6)k++;if(k>bk||(k===bk&&Math.abs(y-bx)<Math.abs(x-bx))){bk=k;x=y}}
+    if(bk<3)x=bx;
+    const own=pw[i].filter(d=>Math.abs(d-x)<=.6).sort((p,q)=>p-q);
+    return own.length?own[own.length>>1]:x});
+  const out=lines.map((l,i)=>({...l,t:Math.max(0,l.t+fill[i]-.15)}));
+  for(let i=1;i<out.length;i++)if(out[i].t<out[i-1].t+.3)out[i].t=out[i-1].t+.3;
+  return{lines:out,score:best};
 }
 function autoSync(){
   if(!G||G.synced||!G.player)return;
@@ -418,13 +470,16 @@ function autoSync(){
   const best=withD.reduce((a,c)=>Math.abs(c.d-vd)<Math.abs(a.d-vd)?c:a);
   // a video much longer or shorter than the song is not the song (a stream, a reaction, a mix): take the next upload
   if(Math.abs(best.d-vd)>30){store.set('dp_okvid_'+G.song.id,null);if(nextVideo('Это видео не похоже на саму песню'))return true}
+  const subs=G.subs&&G.subs[G.vids[G.vi]];
+  if(subs){let al=null;for(const c of G.cands){const r=alignLines(c.lines,subs);if(r&&(!al||r.score>al.score))al=r}
+    if(al&&G.i<0){G.lines=al.lines;G.aligned=true;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length;
+      if(!G.manualOff){G.offset=0;showOffset()}return}}
+  G.aligned=false;
   if(best.lines!==G.lines&&G.i<0){G.lines=best.lines;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
   if(!G.manualOff){
     const vid=G.vids[G.vi],known=G.song.off&&G.song.off[vid];
-    // measured offset for this clip wins; otherwise a small length difference is treated as a longer/shorter intro.
-    // A big difference is usually an outro or a skit, so it is not used.
-    const diff=vd-best.d;
-    G.offset=typeof known==='number'?known:(Math.abs(diff)>=1&&Math.abs(diff)<=4?Math.round(-diff*100)/100:0);
+    // a measured offset for this clip, else none: a length difference says nothing about where the intro ends
+    G.offset=typeof known==='number'?known:0;
     showOffset()}
 }
 function showOffset(){$('ov').textContent=(G.offset>0?'+':'')+G.offset.toFixed(2).replace('.',',')}
@@ -438,12 +493,13 @@ const TAIL=.3; // let the line ring out a little before the song waits, so its l
 function newLine(i){
   G.i=i;G.L={words:wordsOf(G.lines[i].text),w:0,done:false,keys:0,ok:0};
   while(G.L.w<G.L.words.length&&!G.L.words[G.L.w].n)G.L.w++;
-  $('answer').value='';G.prev='';
+  G.prev='';
   $('next').textContent=i+1<G.lines.length?G.lines[i+1].text:'';
   $('hl').textContent=(i+1)+'/'+G.lines.length;$('pg').style.width=((i+1)/G.lines.length*100)+'%';
   $('wave').hidden=true;$('tg').hidden=false;$('tg').classList.remove('wait');$('msg').textContent='';
   paint();
-  if(G.L.w>=G.L.words.length)lineDone(true); // nothing to type in this line (e.g. only Latin words)
+  if(G.L.w>=G.L.words.length)lineDone(true);
+  else if($('answer').value)onType(); // letters typed before the line appeared count
 }
 function loop(){
   if(!G||G.dead||G.done)return;
@@ -488,7 +544,7 @@ function onSeek(t,a){
     for(let k=0;k<G.lines.length;k++)G.res[k]=undefined;
   }else{
     for(let k=a;k<G.lines.length;k++)G.res[k]=undefined;
-    newLine(a);
+    $('answer').value='';newLine(a);
   }
   // if the song had stopped to wait for typing, let it play again from the new place
   if(!playing()&&!G.manualPause)try{G.player.playVideo()}catch(e){}
@@ -528,7 +584,7 @@ function lev(a,b){const m=a.length,n=b.length;let p=Array.from({length:n+1},(_,j
   for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
 function onType(){
   const inp=$('answer');
-  if(G.i<0||!G.L||G.L.done){if(!G.composing)inp.value='';return}
+  if(G.i<0||!G.L||G.L.done)return; // typed early: kept and counted when the line appears
   let val=inp.value;
   // Android keyboards (Gboard etc.) keep the word they were composing and can put it back
   // after we clear the box; drop that leftover so only the new word counts.
@@ -551,6 +607,7 @@ function onType(){
 }
 function lineDone(full){
   const L=G.L;L.done=true;
+  if(!full){$('answer').value='';G.prev='';G.stale=''} // a skipped line leaves nothing behind
   G.res[G.i]={pct:full?(L.keys?Math.round(L.ok/L.keys*100):100):0,full};
   if(G.tStart){G.typeTime+=performance.now()-G.tStart;G.tStart=0}
   paint();stats();
@@ -573,12 +630,12 @@ function toNext(){
 }
 function replayLine(){
   if(G.i<0)return;
-  G.res[G.i]=undefined;const i=G.i;newLine(i);G.waiting=false;seek(G.lines[i].t-.3);G.manualPause=false;G.player.playVideo();focusInput();
+  G.res[G.i]=undefined;const i=G.i;$('answer').value='';newLine(i);G.waiting=false;seek(G.lines[i].t-.3);G.manualPause=false;G.player.playVideo();focusInput();
 }
 function prevLine(){
   const i=Math.max(0,G.i-1);
   for(let k=i;k<G.lines.length;k++)G.res[k]=undefined;
-  seek(G.lines[i].t-.3);if(G.i>=0)newLine(i);G.waiting=false;G.manualPause=false;G.player.playVideo();focusInput();
+  seek(G.lines[i].t-.3);$('answer').value='';if(G.i>=0)newLine(i);G.waiting=false;G.manualPause=false;G.player.playVideo();focusInput();
 }
 function finish(){
   if(!G||G.done)return;G.done=true;cancelAnimationFrame(G.raf);
