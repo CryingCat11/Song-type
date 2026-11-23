@@ -192,7 +192,7 @@ const BUILTIN=[
   {id:'dynasty',title:'ДИНАСТИЯ',artist:'VILLIAN, madk1d',lrcArtist:'VILLIAN',yt:['J7NFL-eOxiQ','p-LBiCtzXu0'],off:{'J7NFL-eOxiQ':-2}},
   {id:'67',title:'67 (Six Seven)',artist:'GAZAN',lrcTitle:'67',yt:['XEGmDSAKJfk','a8sLiNEB9LU','yo5CILhgvT4','iTkVZdai1es'],latin:true},
   {id:'minimum',title:'Базовый минимум',artist:'Sabi, MIA BOYKA',lrcArtist:'MIA BOYKA',yt:['ujA0Hlg5-_g','ZcOgRAX6pDA','ndHnHIgQxys','btQe9LF-MOo']},
-  {id:'rich',title:'Быть богатым',artist:'Voskresenskii, Платина',lrcArtist:'Voskresenskii',yt:['tzwyHxK_GK0','X1-MXdyThJ0','5ykv5hCMeW0','HxM1Uvek2yQ']}
+  {id:'rich',title:'Быть богатым',artist:'Voskresenskii, Платина',lrcArtist:'Voskresenskii',yt:['tzwyHxK_GK0','5ykv5hCMeW0','k2uiDdvtxks','X1-MXdyThJ0']}
 ];
 const MOCK=/[?&]mock/.test(location.search);
 
@@ -330,12 +330,10 @@ async function start(song){
   render();
   await loadYT();if(!G||G.dead)return;
   G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
-    events:{onReady:()=>{G.ready=true;autoSync();$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
-            onStateChange:e=>{if(e.data===1)autoSync();if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
+    events:{onReady:()=>{G.ready=true;if(autoSync())return;$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
+            onStateChange:e=>{if(e.data===1&&autoSync())return;if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
             onError:e=>{const n=e.data;G.codes.push(n);
-              if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off3_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
-                $('cover').hidden=false;$('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
-                if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
+              if(nextVideo('Этот клип нельзя показать на сайте'))return;
               addForm(song,'(Коды YouTube: '+G.codes.join(', ')+') '+(n===101||n===150?'Ни одну загрузку этой песни YouTube не даёт показать на сайте. Вставь ссылку на другое видео с ней.':'Видео с YouTube не загрузилось. Проверь ссылку.'))}}});
   if(MOCK){$('coverBtn').disabled=false;G.ready=true}
   else setTimeout(()=>{if(G&&!G.dead&&G.song===song&&!G.ready&&!G.started){$('coverMsg').textContent='YouTube не отвечает. Проверь, открывается ли youtube.com в этом браузере, и нажми «Заново».';$('retry').hidden=false}},12000);
@@ -402,12 +400,24 @@ try{visualViewport.addEventListener('resize',pinTop)}catch(e){}
 function shift(d){G.offset=Math.round((G.offset+d)*100)/100;G.manualOff=true;store.set(G.offKey,G.offset);showOffset()}
 /* Automatic sync with the clip: pick the lyrics version whose length matches the clip,
    then shift by the length difference (a clip usually has a longer or shorter intro than the album track). */
+function nextVideo(why){
+  if(!G||G.dead||G.vi+1>=G.vids.length)return false;
+  G.vi++;const v=G.vids[G.vi],song=G.song;
+  G.offKey='dp_off3_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);G.manualOff=store.get(G.offKey,null)!==null;G.synced=false;showOffset();
+  G.started=false;G.i=-1;G.L=null;G.waiting=false;G.res=[];G.lastT=null;
+  $('tg').hidden=false;$('wave').hidden=true;$('tg').classList.add('wait');$('tg').textContent='Первая строчка скоро начнётся…';$('next').textContent=G.lines[0].text;
+  $('cover').hidden=false;$('coverMsg').textContent=why+', беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
+  try{G.player.loadVideoById(v)}catch(e){}
+  return true;
+}
 function autoSync(){
   if(!G||G.synced||!G.player)return;
   let vd=0;try{vd=G.player.getDuration()||0}catch(e){}
   if(!vd)return;G.synced=true;
   const withD=G.cands.filter(c=>c.d>0);if(!withD.length)return;
   const best=withD.reduce((a,c)=>Math.abs(c.d-vd)<Math.abs(a.d-vd)?c:a);
+  // a video much longer or shorter than the song is not the song (a stream, a reaction, a mix): take the next upload
+  if(Math.abs(best.d-vd)>30){store.set('dp_okvid_'+G.song.id,null);if(nextVideo('Это видео не похоже на саму песню'))return true}
   if(best.lines!==G.lines&&G.i<0){G.lines=best.lines;$('next').textContent=G.lines[0].text;$('hl').textContent='0/'+G.lines.length}
   if(!G.manualOff){
     const vid=G.vids[G.vi],known=G.song.off&&G.song.off[vid];
