@@ -190,7 +190,7 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 /* ===== Songs. yt = YouTube video id. Lyrics with timings load from lrclib.net in the browser. ===== */
 const BUILTIN=[
   {id:'dynasty',title:'ДИНАСТИЯ',artist:'VILLIAN, madk1d',lrcArtist:'VILLIAN',yt:['J7NFL-eOxiQ','p-LBiCtzXu0'],off:{'J7NFL-eOxiQ':-2}},
-  {id:'67',title:'67 (Six Seven)',artist:'GAZAN',lrcTitle:'67',yt:['XEGmDSAKJfk','a8sLiNEB9LU','yo5CILhgvT4','iTkVZdai1es'],latin:true},
+  {id:'67',title:'67 (Six Seven)',artist:'GAZAN',lrcTitle:'67',yt:['a8sLiNEB9LU','yo5CILhgvT4','iTkVZdai1es'],latin:true},
   {id:'minimum',title:'Базовый минимум',artist:'Sabi, MIA BOYKA',lrcArtist:'MIA BOYKA',yt:['ujA0Hlg5-_g','ZcOgRAX6pDA','ndHnHIgQxys','btQe9LF-MOo']},
   {id:'rich',title:'Быть богатым',artist:'Voskresenskii, Платина',lrcArtist:'Voskresenskii',yt:['tzwyHxK_GK0','5ykv5hCMeW0','k2uiDdvtxks','X1-MXdyThJ0']}
 ];
@@ -328,13 +328,14 @@ async function start(song){
   const lines=cands.length?cands[0].lines:[];
   if(lines.length<2){addForm(song,'Не нашёл текст с таймингами для этой песни. Вставь его ниже, это занимает минуту.');return}
   const vids=[].concat(song.yt);const okVid=store.get('dp_okvid_'+song.id,null);if(okVid&&vids.includes(okVid))vids.unshift(...vids.splice(vids.indexOf(okVid),1));
+  // uploads with captions on the server go first: their text timing is exact
+  const subs={};await Promise.race([Promise.all(vids.map(v=>fetchSubs(v).then(w=>{if(w)subs[v]=w}))),new Promise(r=>setTimeout(r,2500))]);
+  vids.sort((a,b)=>(subs[b]?1:0)-(subs[a]?1:0));
   const offKey='dp_off4_'+song.id+'_'+vids[0];
   G={song,lines,cands,manualOff:store.get(offKey,null)!==null,synced:false,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
      started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
-  G.subs={};const g0=G;
-  const subP=vids.map(v=>fetchSubs(v).then(w=>{if(w)g0.subs[v]=w}));
+  G.subs=subs;
   render();
-  await Promise.race([subP[0],new Promise(r=>setTimeout(r,2500))]);if(!G||G.dead||G!==g0)return;
   await loadYT();if(!G||G.dead)return;
   G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
     events:{onReady:()=>{G.ready=true;if(autoSync())return;$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
