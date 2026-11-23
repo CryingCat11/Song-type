@@ -178,7 +178,7 @@ form textarea{min-height:160px;resize:vertical;font-family:var(--mono);font-size
 <body>
 <div class="wrap">
   <header>
-    <h1 class="logo" id="home" tabindex="0">Допой<span>.</span>строчку</h1>
+    <h1 class="logo" id="home" tabindex="0">Допой<span>.</span>строчку <small id="ver" style="font:500 11px var(--mono,monospace);color:var(--muted);letter-spacing:0">v11</small></h1>
     <div class="hright">
       <div class="seg" id="viewSeg" role="group" aria-label="Версия"><button data-v="pc">ПК</button><button data-v="phone">Телефон</button></div>
     </div>
@@ -361,8 +361,8 @@ function wordsOf(text){
   // words in (brackets) are ad-libs and backing vocals: shown, not typed
   let depth=0;
   return text.split(/\s+/).filter(Boolean).map(raw=>{
-    const inBr=depth>0||/^[^\p{L}\p{N}]*[(\[]/u.test(raw);
-    for(const c of raw){if(c==='('||c==='[')depth++;else if((c===')'||c===']')&&depth>0)depth--}
+    const inBr=depth>0||/^[^\p{L}\p{N}]*[(\[（{]/u.test(raw);
+    for(const c of raw){if('([（{'.includes(c))depth++;else if(')]）}'.includes(c)&&depth>0)depth--}
     const skip=inBr||!latin&&/[a-z]/i.test(raw);return {raw,skip,n:skip?'':normStr(raw)}});
 }
 function render(){
