@@ -386,6 +386,8 @@ function render(){
     setTimeout(()=>{if(G&&!G.dead&&!G.started)$('msg').textContent='Если клип не пошёл, нажми ▶ прямо на клипе.'},1500)};
   const inp=$('answer');
   inp.oninput=onType;inp.onfocus=pinTop;
+  inp.addEventListener('compositionstart',()=>{G.composing=true});
+  inp.addEventListener('compositionend',()=>{G.composing=false;setTimeout(onType,0)});
   inp.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();togglePause()}else if(e.key==='Tab'){e.preventDefault();skipLine()}else if(e.key==='Enter'){e.preventDefault()}};
   document.querySelectorAll('.ic,#cSkip').forEach(x=>x.onmousedown=e=>e.preventDefault()); // clicking controls keeps the typing focus
   $('cPlay').onclick=togglePause;$('cPrev').onclick=prevLine;$('cRep').onclick=replayLine;$('cNext').onclick=skipLine;$('cFin').onclick=finish;$('cSkip').onclick=toNext;
@@ -488,8 +490,8 @@ function wave(t){
     $('wp').setAttribute('d',d);
   }
 }
-function paint(){
-  const L=G.L,cur=normStr($('answer').value);let html='';
+function paint(curIn){
+  const L=G.L,cur=curIn!=null?curIn:normStr($('answer').value);let html='';
   L.words.forEach((w,k)=>{
     let inner='';
     if(!w.n||k<L.w||L.done){inner=`<span class="${w.skip?'skip':w.n?'ok':'p'}">${esc(w.raw)}</span>`}
@@ -514,20 +516,27 @@ function stats(){
 function lev(a,b){const m=a.length,n=b.length;let p=Array.from({length:n+1},(_,j)=>j);
   for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
 function onType(){
-  if(G.i<0||!G.L||G.L.done){$('answer').value='';return}
-  const L=G.L,w=L.words[L.w],val=$('answer').value,cur=normStr(val);
+  const inp=$('answer');
+  if(G.i<0||!G.L||G.L.done){if(!G.composing)inp.value='';return}
+  let val=inp.value;
+  // Android keyboards (Gboard etc.) keep the word they were composing and can put it back
+  // after we clear the box; drop that leftover so only the new word counts.
+  if(G.stale){
+    if(val.startsWith(G.stale)){val=val.slice(G.stale.length);if(!G.composing)inp.value=val}
+    else if(!G.stale.startsWith(val))G.stale='';
+  }
+  const L=G.L,w=L.words[L.w],cur=normStr(val);
   if(!G.tStart&&cur.length)G.tStart=performance.now();
   // count new keystrokes for accuracy
   if(cur.length>G.prev.length){for(let k=G.prev.length;k<cur.length;k++){G.keys++;L.keys++;if(cur[k]===w.n[k]){G.ok++;L.ok++}}}
   G.prev=cur;
-  // space after a mostly typed word accepts it with the typos counted, so a typo never blocks the song
-  const spaced=false; // a word counts only when it is typed exactly; wrong letters stay red until fixed
-  if(cur===w.n||spaced){ // word done: box clears, next word
+  // a word counts only when it is typed exactly; wrong letters stay red until fixed
+  if(cur===w.n){ // word done: box clears, next word
     G.words++;L.w++;while(L.w<L.words.length&&!L.words[L.w].n)L.w++;
-    $('answer').value='';G.prev='';
+    G.stale=G.composing?inp.value:'';inp.value='';G.prev='';
     if(L.w>=L.words.length)return lineDone(true);
   }
-  paint();stats();
+  paint(cur);stats();
 }
 function lineDone(full){
   const L=G.L;L.done=true;
