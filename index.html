@@ -337,6 +337,8 @@ async function start(song){
   G={song,lines,cands,manualOff:store.get(offKey,null)!==null,synced:false,i:-1,res:[],L:null,prev:'',keys:0,ok:0,words:0,typeTime:0,tStart:0,offset:store.get(offKey,0),offKey,
      started:false,waiting:false,done:false,dead:false,vids,vi:0,codes:[]};
   G.subs=subs;
+  // a song sung mostly in Latin letters (an English song added by hand) is typed in full
+  {const ws=lines.flatMap(l=>l.text.split(/\s+/)).filter(w=>normStr(w));G.latin=ws.filter(w=>/[a-z]/i.test(w)).length>ws.length/2}
   render();
   await loadYT();if(!G||G.dead)return;
   G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
@@ -355,7 +357,7 @@ async function start(song){
 function wordsOf(text){
   // [{raw, n}] — n = normalized letters; punctuation-only chunks are kept for display, not typed
   // words with Latin letters are skipped (no keyboard switching), unless the song is in English
-  const latin=G&&G.song&&G.song.latin;
+  const latin=G&&(G.latin||G.song&&G.song.latin);
   return text.split(/\s+/).filter(Boolean).map(raw=>{const skip=!latin&&/[a-z]/i.test(raw);return {raw,skip,n:skip?'':normStr(raw)}});
 }
 function render(){
