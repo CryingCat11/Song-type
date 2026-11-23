@@ -37,6 +37,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{
 a{color:var(--hint)}
 .btn{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;font-weight:600;font-size:15px;white-space:nowrap}
 .btn:hover{border-color:var(--muted)}
+.btn:disabled{opacity:.5;cursor:default}
 .btn.main{background:var(--lamp);color:#1b1206;border-color:var(--lamp)}
 .btn.danger{border-color:rgba(255,107,107,.5);color:var(--bad)}
 .btn.sm{padding:6px 10px;font-size:13px}
@@ -284,15 +285,16 @@ async function start(song){
      started:false,waiting:false,done:false,dead:false,prevLen:0,mistakes:0,vids,vi:0};
   render();
   await loadYT();if(!G||G.dead)return;
-  G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{origin:location.origin,playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
-    events:{onReady:()=>{$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
-            onStateChange:e=>{if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;focusInput()}},
+  G.player=MOCK?mockPlayer():new YT.Player('yt',{videoId:vids[0],playerVars:{playsinline:1,rel:0,modestbranding:1,controls:1,cc_load_policy:0,iv_load_policy:3},
+    events:{onReady:()=>{G.ready=true;$('coverBtn').disabled=false;$('coverMsg').textContent='Нажми «Старт» и сразу печатай.'},
+            onStateChange:e=>{if(e.data===1)store.set('dp_okvid_'+song.id,G.vids[G.vi]);if(e.data===0)finish();if(e.data===1&&!G.started){G.started=true;$('cover').hidden=true;$('msg').textContent='';focusInput()}},
             onError:e=>{const n=e.data;
               if(G&&!G.dead&&G.vi+1<G.vids.length){G.vi++;const v=G.vids[G.vi];G.offKey='dp_off_'+song.id+'_'+v;G.offset=store.get(G.offKey,0);showOffset();
-                $('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
+                $('cover').hidden=false;$('coverMsg').textContent='Этот клип нельзя показать на сайте, беру другую загрузку с YouTube ('+(G.vi+1)+' из '+G.vids.length+')…';
                 if(G.started){G.player.loadVideoById(v)}else{G.player.cueVideoById(v)}return}
               noVideo(song,n===101||n===150?'YouTube не даёт показать ни одну загрузку этой песни на сайте.':'Видео с YouTube не загрузилось.')}}});
-  if(MOCK){$('coverBtn').disabled=false}
+  if(MOCK){$('coverBtn').disabled=false;G.ready=true}
+  else setTimeout(()=>{if(G&&!G.dead&&G.song===song&&!G.ready&&!G.started)noVideo(song,'Клип с YouTube не загрузился за 12 секунд.')},12000);
   loop();
 }
 
@@ -316,7 +318,11 @@ function render(){
     <p class="msg" id="msg"></p>
     <p class="keys"><kbd>Enter</kbd> пропустить строчку · <kbd>Esc</kbd> пауза</p>
    </div></div>`;
-  $('coverBtn').onclick=()=>{G.player.playVideo();focusInput()};
+  $('coverBtn').onclick=()=>{
+    if(!G.ready&&!MOCK)return;
+    $('cover').hidden=true;try{G.player.playVideo()}catch(e){}focusInput();
+    // iPhone may refuse to start the clip from our button: then the player taps play on the clip itself
+    setTimeout(()=>{if(G&&!G.dead&&!G.started)$('msg').textContent='Если клип не пошёл, нажми ▶ на самом клипе. Строчки подстроятся под видео.'},1500)};
   const inp=$('answer');
   inp.oninput=onType;
   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();skip()}else if(e.key==='Escape'){e.preventDefault();togglePause()}};
